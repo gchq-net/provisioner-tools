@@ -17,4 +17,6 @@ def checkCypto(provisioner: provisioner.provisioner):
 
 if __name__ == "__main__":
     device = provisioner.provisioner()
+    device.wait_for_detect()
     checkCypto(device)
+    device.wait_for_no_detect()
