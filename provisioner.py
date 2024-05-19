@@ -60,7 +60,9 @@ class provisioner:
         else:
             current &= ~(pin.value)
 
-        self.gpio.set_direction(pin.value, current)
+        pin_mask = self.gpio.pins | pin.value
+
+        self.gpio.set_direction(pin_mask, current)
 
     def set_gpio_pin(self, pin: provisioner_pinmap, state: bool):
         current = self.gpio.read(with_output=True)
@@ -74,7 +76,7 @@ class provisioner:
 
     def get_gpio_pin(self, pin: provisioner_pinmap):
         current = self.gpio.read(with_output=True)
-        if (current & pin.value):
+        if ((current & pin.value) > 0):
             return True
         return False
 
@@ -87,6 +89,12 @@ class provisioner:
         while (True):
             if (not self.get_gpio_pin(provisioner_pinmap.HEXPANSION_DETECT)):
                 return True
+
+    def set_status_led(self, status: bool):
+        self.set_gpio_pin(provisioner_pinmap.STATUS_LED, status)
+
+    def get_board_detect(self):
+        return self.get_gpio_pin(provisioner_pinmap.HEXPANSION_DETECT)
 
 
 # Print device info if run on its own
