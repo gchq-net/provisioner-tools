@@ -1,4 +1,5 @@
 import enum
+import hashlib
 import pyftdi.i2c
 import time
 
@@ -61,10 +62,41 @@ class atsha204A:
             crc >> 8,
         ]
 
+        # print("Sent command" + ' '.join('{:02x}'.format(x) for x in command))
+
         self.i2c_port.write(command)
-        time.sleep(0.1)
-        # todo check incoming CRC
-        return self.i2c_port.read(response_length)
+
+        response = None
+        for x in range(3):
+            time.sleep(0.05)
+            try:
+                # todo check incoming CRC
+                # print("reading")
+                response = self.i2c_port.read(response_length)
+                break
+            except pyftdi.i2c.I2cNackError:
+                print("read error")
+        if response is None:
+            raise Exception("No response from chip")
+
+        # print("Response" + ' '.join('{:02x}'.format(x) for x in response))
+
+        if (response[0] == 0xFF):
+            raise IOError("chip returned no data")
+
+        resp_crc = atsha204A.calculate_crc(response, 0, response[0]-2)
+
+        if ((resp_crc & 0xFF) != response[response[0]-2] or (resp_crc >> 8 & 0xFF) != response[response[0]-1]):
+            raise IOError("chip response CRC mismatch {} {} != {} {}".format(
+                hex(resp_crc & 0xFF), hex(resp_crc >> 8 & 0xFF),
+                hex(response[response[0]-2]), hex(response[response[0]-1])
+            ))
+
+        if (response[0] == 0x04 and response[1] != 0x00):
+            raise RuntimeError("Chip returned an error {}".format(hex(response[1])))
+
+        time.sleep(0.2)
+        return response
 
     def calculate_crc(data: "bytearray|list[int]", offset: int, length: int):
         """Calculates the CRC for the ATSHA204A
@@ -91,7 +123,76 @@ class atsha204A:
 # ATSHA204A crypto commands
 #
 
-    def command_read(self, zone: atasha204A_zone, block: int, 
+    def command_gendig(self,
+                       zone: atasha204A_zone,
+                       slot: int,
+                       data=[]):
+        """Performs a gendig command on the chip"""
+
+        param1 = zone.value
+
+        param2 = slot
+
+        mem = self.sendCommand(
+            atasha204A_command.GEN_DIG,  # read command
+            param1, param2, data,
+            38)
+
+        return mem[1]
+
+    def command_mac(self,
+                    slot_id: int,
+                    challenge: bytearray,
+                    include_sn: bool = False,
+                    include_otp_low: bool = False,
+                    include_otp_high: bool = False,
+                    tempkey_srcflag: bool = False,
+                    use_tempkey_start: bool = False,
+                    use_tempkey_end: bool = False,
+                    ) -> bytearray:
+        """Performs a sha mac calculation"""
+
+        param1 = 0x00
+        if include_sn:
+            param1 |= 0x40
+        if include_otp_low:
+            param1 |= 0x20
+        if include_otp_high:
+            param1 |= 0x10
+        if tempkey_srcflag:
+            param1 |= 0x04
+        if use_tempkey_start:
+            param1 |= 0x02
+        if use_tempkey_end:
+            param1 |= 0x01
+
+        param2 = slot_id
+
+        response = self.sendCommand(
+            atasha204A_command.MAC,  # read command
+            param1, param2, challenge,
+            38)
+
+        return response[1:34]
+
+    def command_nonce(self, nonceMode, input=[]):
+        """Generates a nonce on the chip"""
+
+        param1 = nonceMode
+
+        param2 = 0x0000
+
+        mem = self.sendCommand(
+            atasha204A_command.NONCE,  # read command
+            param1, param2, input,
+            38)
+
+        if (nonceMode == 0x03):
+            return mem[1]
+        else:
+            return mem[1:33]
+
+    def command_read(self, zone: atasha204A_zone, block: int,
                      offset: int, four_byte=False):
         """Reads a block of memory from the IC"""
 
@@ -104,6 +205,40 @@ class atsha204A:
         mem = self.sendCommand(
             atasha204A_command.READ,  # read command
             param1, param2, [],
+            38)
+
+        if four_byte:
+            return mem[1:5]
+        else:
+            return mem[1:33]
+
+    def command_write(
+            self,
+            zone: atasha204A_zone,
+            block: int,
+            offset: int,
+            data: "bytearray|list[int]",
+            mac: "bytearray|list[int]|None" = None,
+            four_byte: bool = False,
+            encrypted: bool = False):
+        pass
+        """Writes a block of memory to the IC"""
+
+        param1 = zone.value
+        if encrypted:
+            param1 |= 1 << 6  # encrypted write flag
+        if not four_byte:
+            param1 += 1 << 7  # 32 byte read flag
+
+        param2 = block << 3 + offset
+
+        command_data = list(data)
+        if (mac is not None):
+            command_data += list(mac)
+
+        mem = self.sendCommand(
+            atasha204A_command.WRITE,  # read command
+            param1, param2, command_data,
             38)
 
         if four_byte:
@@ -129,3 +264,110 @@ class atsha204A:
             return True
         else:
             return False
+
+    def encrypted_read(
+            self,
+            readslot: int,
+            readkey_slot: int,
+            readkey: "bytearray|list[int]",
+            nonce_type: int = 0x00,
+            nonce: "bytearray|list[int]" = [0x00]*20):
+        """Performs a sequence of commands to perform an encrtpted read"""
+
+        # get the device serial number //TODO can replace with fixed data
+        serial = self.get_serial_number()
+
+        # populate tempkey with a nonce with a provided nonce type
+        random = self.command_nonce(nonce_type, nonce)
+
+        # create a gendig command and provide the standard data for checkonly keys
+        self.command_gendig(atasha204A_zone.DATA, readkey_slot,
+                            [0x15, 0x02, readkey_slot, 0x00])
+
+        # calculate the contents of the atsha204a tempkey
+        chip_nonce = None
+        if nonce_type != 0x03:
+            noncedata = list(random) + list(nonce) + [0x16, 0x00, 0x00]
+
+            chip_nonce = hashlib.sha256(
+                bytes(noncedata)
+            ).digest()
+        else:
+            chip_nonce = nonce
+
+        # calculate the result of the gendig command to get the tempkey value used as a session key
+        hashdata = list(readkey)
+        hashdata += [0x15, 0x02, readkey_slot, 0x00, serial[8], serial[0], serial[1]]
+        hashdata += [0x00]*25 + list(chip_nonce)
+
+        session_key = hashlib.sha256(
+            bytes(hashdata)
+        ).digest()
+
+        # read the data from the chip
+        data = self.command_read(atasha204A_zone.DATA, readslot, 0)
+
+        # exor the data with the session key to get the value
+        xored = bytes(a ^ b for a, b in zip(data, session_key))
+
+        return xored
+
+    def encrypted_write(
+            self,
+            write_slot: int,
+            data: "bytearray|list[int]",
+            writekey_slot: int,
+            writekey: "bytearray|list[int]",
+            nonce_type: int = 0x00,
+            nonce: "bytearray|list[int]" = [0x00]*20):
+        """Performs a sequence of commands to perform an encrypted write"""
+
+        # get the device serial number //TODO can replace with fixed data
+        serial = self.get_serial_number()
+
+        # populate tempkey with a nonce with a provided nonce type
+        random = self.command_nonce(nonce_type, nonce)
+
+        # create a gendig command and provide the standard data for checkonly keys
+        self.command_gendig(atasha204A_zone.DATA, writekey_slot,
+                            [0x15, 0x02, writekey_slot, 0x00])
+
+        # calculate the contents of the atsha204a tempkey
+        chip_nonce = None
+        if nonce_type != 0x03:
+            noncedata = list(random) + list(nonce) + [0x16, 0x00, 0x00]
+
+            chip_nonce = hashlib.sha256(
+                bytes(noncedata)
+            ).digest()
+        else:
+            chip_nonce = nonce
+
+        # calculate the result of the gendig command to get the tempkey value used as a session key
+        hashdata = list(writekey)
+        hashdata += [0x15, 0x02, writekey_slot, 0x00, serial[8], serial[0], serial[1]]
+        hashdata += [0x00]*25 + list(chip_nonce)
+
+        session_key = hashlib.sha256(
+            bytes(hashdata)
+        ).digest()
+
+        # xor the data with the session_key
+        xored = bytes(a ^ b for a, b in zip(data, session_key))
+
+        # calculate the mac value
+        write_addr = write_slot << 3
+        mac = hashlib.sha256(bytes(
+            list(session_key) +
+            [0x12, 0x82, write_addr & 0xFF, (write_slot >> 8) & 0xFF, serial[8], serial[0], serial[1]] +
+            [0x00]*25 + list(data)
+        )).digest()
+
+        # perform the write command
+        self.command_write(
+            atasha204A_zone.DATA,
+            write_slot, 0,
+            xored,
+            mac,
+            encrypted=False
+        )
