@@ -193,5 +193,6 @@ if __name__ == "__main__":
 
     # device.wait_for_no_detect()
 
-    crypto_config_test(quest_marker)
+    # crypto_config_test(quest_marker)
+    quest_marker.provision()
     device.set_status_led(False)

@@ -67,7 +67,7 @@ class atsha204A:
         self.i2c_port.write(command)
 
         response = None
-        for x in range(3):
+        for x in range(10):
             time.sleep(0.05)
             try:
                 # todo check incoming CRC
@@ -123,6 +123,39 @@ class atsha204A:
 # ATSHA204A crypto commands
 #
 
+    def command_checkmac(self,
+                         slot: int,
+                         client_chal: "bytearray|list[int]",
+                         client_resp: "bytearray|list[int]",
+                         other_Data: "bytearray|list[int]",
+                         use_client_chal: bool = True,
+                         use_slot: bool = True,
+                         tempkey_src: bool = False,
+                         use_otp: bool = False,
+                         ):
+        """Performs a checkmac command on the chip"""
+
+        param1 = 0x00
+        if not use_client_chal:
+            param1 |= 0x01
+        if not use_slot:
+            param1 |= 0x02
+        if tempkey_src:
+            param1 |= 0x04
+        if use_otp:
+            param1 |= 0x20
+
+        param2 = slot
+
+        data = list(client_chal) + list(client_resp) + list(other_Data)
+
+        mem = self.sendCommand(
+            atasha204A_command.CHECK_MAC,  # read command
+            param1, param2, data,
+            38)
+
+        return mem[1]
+
     def command_gendig(self,
                        zone: atasha204A_zone,
                        slot: int,
@@ -136,6 +169,23 @@ class atsha204A:
         mem = self.sendCommand(
             atasha204A_command.GEN_DIG,  # read command
             param1, param2, data,
+            38)
+
+        return mem[1]
+
+    def command_lock(self, lock_data, crc=None, skip_crc=False):
+
+        param1 = 0x00
+        if lock_data:
+            param1 |= 0x01
+        if skip_crc:
+            param1 |= 0x01 << 7
+
+        param2 = crc
+
+        mem = self.sendCommand(
+            atasha204A_command.LOCK,  # read command
+            param1, param2, [],
             38)
 
         return mem[1]
@@ -200,7 +250,7 @@ class atsha204A:
         if not four_byte:
             param1 += 0x80  # 32 byte read flag
 
-        param2 = block << 3 + offset
+        param2 = (block << 3) + offset
 
         mem = self.sendCommand(
             atasha204A_command.READ,  # read command
@@ -230,7 +280,7 @@ class atsha204A:
         if not four_byte:
             param1 += 1 << 7  # 32 byte read flag
 
-        param2 = block << 3 + offset
+        param2 = (block << 3) + offset
 
         command_data = list(data)
         if (mac is not None):
@@ -371,3 +421,18 @@ class atsha204A:
             mac,
             encrypted=False
         )
+
+    def check_key(self, slot, key):
+        """Checks a key matches the expected value"""
+
+        client_chal = [0x00]*32
+
+        otherdata = [0x08, 0x00, slot, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
+
+        # perform a local mac command
+        macdata = list(key) + list(client_chal) + otherdata[0:4] + [0x00]*8 + otherdata[4:7] + [0xEE] + otherdata[7:11] + [0x01, 0x23] + otherdata[11:13]
+        client_resp = hashlib.sha256(
+            bytes(macdata)
+        ).digest()
+
+        self.command_checkmac(slot, client_chal, client_resp, otherdata)
