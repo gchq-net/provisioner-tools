@@ -223,7 +223,7 @@ class atsha204A:
             param1, param2, challenge,
             38)
 
-        return response[1:34]
+        return response[1:33]
 
     def command_nonce(self, nonceMode, input=[]):
         """Generates a nonce on the chip"""
@@ -422,7 +422,32 @@ class atsha204A:
             encrypted=False
         )
 
-    def check_key(self, slot, key):
+    def generate_diversified_key(
+            self,
+            root_key: "bytearray|list[int]",
+            target_slot: int,
+            ):
+        """
+        Geneates a diversified key for the device
+        Uses implementation in Atmel-8841A-CryptoAuth-ATSHA204-Unique-Keys-ApplicationNote_042013
+        """
+        serial = self.get_serial_number()
+
+        serial_pad = [0x00] * (32 - 9)
+
+        generation_hash_data = list(root_key)
+        generation_hash_data += [0x1C, 0x04, target_slot & 0xFF, (target_slot >> 8) & 0xFF]
+        generation_hash_data += [0xEE, 0x01, 0x23]
+        generation_hash_data += [0x00] * 25
+        generation_hash_data += list(serial) + list(serial_pad)
+
+        diversified_key = hashlib.sha256(bytes(
+            generation_hash_data
+        )).digest()
+
+        return diversified_key
+
+    def check_key(self, slot: int, key: "bytearray|list[int]"):
         """Checks a key matches the expected value"""
 
         client_chal = [0x00]*32
@@ -430,7 +455,9 @@ class atsha204A:
         otherdata = [0x08, 0x00, slot, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
 
         # perform a local mac command
-        macdata = list(key) + list(client_chal) + otherdata[0:4] + [0x00]*8 + otherdata[4:7] + [0xEE] + otherdata[7:11] + [0x01, 0x23] + otherdata[11:13]
+        macdata = list(key) + list(client_chal)
+        macdata += otherdata[0:4] + [0x00]*8 + otherdata[4:7]
+        macdata += [0xEE] + otherdata[7:11] + [0x01, 0x23] + otherdata[11:13]
         client_resp = hashlib.sha256(
             bytes(macdata)
         ).digest()

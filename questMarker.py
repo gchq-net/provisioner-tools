@@ -233,4 +233,19 @@ class quest_marker:
         # print(keys)
 
         self.write_crypto_config()
-        self.write_crypto_data(0x0001, keys)
+    def perform_challenge(
+            self,
+            badge_mac: "bytearray|list[int]",
+            slot: int = 0x00
+            ) -> "tuple[bytearray, bytearray]":
+        """performs a challenge against the badge"""
+
+        challenge = [0x00] * 20
+
+        # perform a nonce command
+        random = self.crypto.command_nonce(0x00, challenge)
+
+        # perform the mac command
+        response = self.crypto.command_mac(slot, [], use_tempkey_end=True)
+
+        return (random, response)

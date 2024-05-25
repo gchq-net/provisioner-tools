@@ -1,5 +1,8 @@
+import click
+import json
 import provisioner
 import questMarker
+import server_validator
 
 
 def hexString(data):
@@ -179,20 +182,104 @@ def crypto_config_test(quest_maker: questMarker.quest_marker):
         print("Sucessfuly failed to mac against slot F")
 
 
-if __name__ == "__main__":
+@click.group()
+@click.option('-s', '--secrets', type=click.Path(exists=True), default="secrets.json")
+@click.pass_context
+def cli(ctx, secrets):
+
+    ctx.ensure_object(dict)
+
+    with open(secrets) as file:
+        raw_keys = json.load(file)
+        keys = dict()
+        for id in raw_keys:
+            keys[bytearray.fromhex(id)[0]] = bytearray.fromhex(raw_keys[id])
+
+    ctx.obj['keys'] = keys
+
+
+@cli.command()
+@click.pass_context
+def perform_challenge(ctx):
+    """
+    Performs a test challenge against the chip
+    and validates agaisnt the test server
+    """
     device = provisioner.provisioner()
     quest_marker = questMarker.quest_marker(device)
 
-    # device.wait_for_detect()
-    (tests_passed, results) = quest_marker.basic_self_test(eeprom_write=True)
-    if not tests_passed:
-        print("failed", results)
+    chip_serial = quest_marker.crypto.get_serial_number()
+    (chip_random, chip_response) = quest_marker.perform_challenge([0x00])
+
+    print("chip: {}".format(hexString(chip_response)))
+
+    expected_response = server_validator.badge_response_calculation(
+        chip_serial,
+        chip_random,
+        [0x00]*20,
+        ctx.obj['keys'][0x00])
+
+    print("serv: {}".format(hexString(expected_response)))
+
+    print(len(chip_response), len(expected_response))
+
+    if chip_response == expected_response:
+        print("Correct challenge recieved for {} at {}".format([0x00], hexString(chip_serial)))
+        quest_marker.set_status_led(True)
     else:
-        print("Passed")
-        device.set_status_led(True)
+        print("Incorrect challenge recieved for {} at {}".format([0x00], hexString(chip_serial)))
+        quest_marker.set_status_led(False)
+
+
+@cli.command()
+@click.pass_context
+def check_diversified_key(ctx):
+    """
+    Checks a diversified key in slot 0 is correct
+    """
+    device = provisioner.provisioner()
+    quest_marker = questMarker.quest_marker(device)
+
+    div_key = quest_marker.crypto.generate_diversified_key(
+        ctx.obj['keys'][0x00],
+        0x00
+    )
+
+    print(hexString(div_key))
+
+    quest_marker.crypto.check_key(0x00, div_key)
+
+
+if __name__ == "__main__":
+    cli(obj={})
+
+    # device = provisioner.provisioner()
+    # quest_marker = questMarker.quest_marker(device)
+
+    # div_key = quest_marker.crypto.generate_diversified_key(
+    #     bytearray.fromhex(""),
+    #     0x00
+    # )
+
+    # quest_marker.crypto.sendWake()
+
+    # quest_marker.crypto.encrypted_write(
+    #     0x00, div_key, 0x0F,
+    #     bytearray.fromhex("")
+    #     )
+
+    # device.wait_for_detect()
+    # (tests_passed, results) = quest_marker.basic_self_test(eeprom_write=True)
+    # if not tests_passed:
+    #     print("failed", results)
+    # else:
+    #     print("Passed")
+    #     device.set_status_led(True)
 
     # device.wait_for_no_detect()
 
     # crypto_config_test(quest_marker)
-    quest_marker.provision()
-    device.set_status_led(False)
+    # quest_marker.provision()
+
+
+    # device.set_status_led(False)
