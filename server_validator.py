@@ -1,4 +1,5 @@
 import hashlib
+import utils
 
 
 def generate_diversified_key(
@@ -25,7 +26,7 @@ def generate_diversified_key(
 def badge_response_calculation(
         atsha_serial: "bytearray|list[int]",
         atsha_random: "bytearray|list[int]",
-        nonce: "bytearray|list[int]",
+        badge_mac: "bytearray|list[int]",
         master_key: "bytearray|list[int]",
         slot: int = 0x00,
         ) -> bytearray:
@@ -34,12 +35,15 @@ def badge_response_calculation(
     # generate diversified key used on the badge
     marker_key = generate_diversified_key(atsha_serial, master_key, 0x00)
 
-    import main
+    formatted_mac = bytearray("{:02X}-{:02X}-{:02X}-{:02X}-{:02X}-{:02X}".format(
+        badge_mac[0], badge_mac[1], badge_mac[2],
+        badge_mac[3], badge_mac[4], badge_mac[5]
+        ), "ascii")
 
-    print(main.hexString(marker_key))
+    challenge = list(formatted_mac) + [0x00] * 3
 
     # generate tempkey after nonce command
-    noncedata = list(atsha_random) + list(nonce) + [0x16, 0x00, 0x00]
+    noncedata = list(atsha_random) + list(challenge) + [0x16, 0x01, 0x00]
     atsha_tempkey = hashlib.sha256(
         bytes(noncedata)
     ).digest()
@@ -55,3 +59,27 @@ def badge_response_calculation(
     ).digest()
 
     return client_resp
+
+
+if __name__ == "__main__":
+    # check against a set of data provided by a real badge
+    import json
+
+    badge_mac = [0xDC, 0x54, 0x75, 0xD8, 0x6E, 0x88]
+
+    serial = b'\x01#]\xc2Q-\xb7a\xee'
+    random = b'N\xab\x86\xb4\xfc\xe89`\\\xb5\xe0\x9f\xb8H`\xdbN_\xe3g\x81\x86\xff\x17\xfc\x88\xb0.\xea\xf4#\xcb'
+    response = b'\x1a\x16\x03b$\x02\xd7\xdf\xe7\xb448\xc9\xa2~n\x82\x04\xa5\xefS+\x15\xafr\xd5Uo1\xc7\xa1a'
+
+    print(utils.hexString(serial))
+
+    with open("secrets.json") as file:
+        raw_keys = json.load(file)
+        keys = dict()
+        for id in raw_keys:
+            keys[bytearray.fromhex(id)[0]] = bytearray.fromhex(raw_keys[id])
+
+    expected = badge_response_calculation(serial, random, badge_mac, keys[0])
+
+    print(utils.hexString(response))
+    print(utils.hexString(expected))

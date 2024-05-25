@@ -231,10 +231,15 @@ class quest_marker:
             ) -> "tuple[bytearray, bytearray]":
         """performs a challenge against the badge"""
 
-        challenge = [0x00] * 20
+        formatted_mac = bytearray("{:02X}-{:02X}-{:02X}-{:02X}-{:02X}-{:02X}".format(
+            badge_mac[0], badge_mac[1], badge_mac[2],
+            badge_mac[3], badge_mac[4], badge_mac[5]
+            ), "ascii")
+
+        challenge = list(formatted_mac) + [0x00] * 3
 
         # perform a nonce command
-        random = self.crypto.command_nonce(0x00, challenge)
+        random = self.crypto.command_nonce(0x01, challenge)
 
         # perform the mac command
         response = self.crypto.command_mac(slot, [], use_tempkey_end=True)

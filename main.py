@@ -3,11 +3,7 @@ import json
 import provisioner
 import questMarker
 import server_validator
-
-
-def hexString(data):
-    """Converts data into a hex string for printing"""
-    return ' '.join('{:02x}'.format(x) for x in data)
+from utils import hexString
 
 
 factoryData = {
@@ -208,15 +204,17 @@ def perform_challenge(ctx):
     device = provisioner.provisioner()
     quest_marker = questMarker.quest_marker(device)
 
+    badge_mac = [0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
+
     chip_serial = quest_marker.crypto.get_serial_number()
-    (chip_random, chip_response) = quest_marker.perform_challenge([0x00])
+    (chip_random, chip_response) = quest_marker.perform_challenge(badge_mac)
 
     print("chip: {}".format(hexString(chip_response)))
 
     expected_response = server_validator.badge_response_calculation(
         chip_serial,
         chip_random,
-        [0x00]*20,
+        badge_mac,
         ctx.obj['keys'][0x00])
 
     print("serv: {}".format(hexString(expected_response)))
@@ -270,23 +268,31 @@ def provision_single_hexpansion(ctx, id: int):
     quest_marker.set_status_led(True)
 
 
+@cli.command
+@click.pass_context
+def set_diversified_key(ctx, id: int):
+    """diversifies the slot 0 key"""
+
+    device = provisioner.provisioner()
+    quest_marker = questMarker.quest_marker(device)
+
+    div_key = quest_marker.crypto.generate_diversified_key(
+        ctx.obj['keys'][0x00],
+        0x00
+        )
+
+    quest_marker.crypto.sendWake()
+
+    quest_marker.crypto.encrypted_write(
+        0x00, div_key, 0x0F,
+        ctx.obj['keys'][0x0F]
+        )
+
+    print("Diversified key set for slot 0")
+
+
 if __name__ == "__main__":
     cli(obj={})
-
-    # device = provisioner.provisioner()
-    # quest_marker = questMarker.quest_marker(device)
-
-    # div_key = quest_marker.crypto.generate_diversified_key(
-    #     bytearray.fromhex(""),
-    #     0x00
-    # )
-
-    # quest_marker.crypto.sendWake()
-
-    # quest_marker.crypto.encrypted_write(
-    #     0x00, div_key, 0x0F,
-    #     bytearray.fromhex("")
-    #     )
 
     # device.wait_for_detect()
     # (tests_passed, results) = quest_marker.basic_self_test(eeprom_write=True)
@@ -299,7 +305,6 @@ if __name__ == "__main__":
     # device.wait_for_no_detect()
 
     # crypto_config_test(quest_marker)
-    # quest_marker.provision()
 
 
     # device.set_status_led(False)
