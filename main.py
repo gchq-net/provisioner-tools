@@ -291,6 +291,20 @@ def set_diversified_key(ctx, id: int):
     print("Diversified key set for slot 0")
 
 
+@cli.command
+@click.pass_context
+def check_config(ctx):
+    device = provisioner.provisioner()
+    quest_marker = questMarker.quest_marker(device)
+
+    passed = quest_marker.check_config(ctx.obj['keys'])
+
+    if passed:
+        print("Config is correct")
+    else:
+        print("configuration mismatch")
+
+
 if __name__ == "__main__":
     cli(obj={})
 

@@ -8,6 +8,50 @@ PIN_STATUS_LED = provisioner.provisioner_pinmap.HEXPANSION_LS1
 PIN_EEPROM_WP = provisioner.provisioner_pinmap.HEXPANSION_LS2
 
 
+ATSHA_CONFIG = [
+    0xC8,  # I2C Address (default)
+    0x00,  # CheckMacConfig (use rand in nonces for read/write)
+    0xAA,  # OTPmode (locked)
+    0x00,  # SelectorMode
+    0x80, 0x4F,  # Slot 0 (secret, enc write by slot F)
+    0x80, 0x4F,  # Slot 1 (secret, enc write by slot F)
+    0x80, 0x4E,  # Slot 2 (secret, enc write by slot E)
+    0x80, 0x4E,  # Slot 3 (secret, enc write by slot E)
+    0x00, 0x4E,  # Slot 4 (public, enc write by slot E)
+    0x00, 0x4E,  # Slot 5 (public, enc write by slot E)
+    0x00, 0x4E,  # Slot 6 (public, enc write by slot E)
+    0x00, 0x4E,  # Slot 7 (public, enc write by slot E)
+    0xC9, 0x4F,  # slot 8 (secret, enc read by slot 9, enc write by slot F)
+    0x80, 0x4F,  # Slot 9 (secret, enc write by slot F)
+    0xCB, 0x4E,  # slot A (secret, enc read by slot B, enc write by slot E)
+    0x80, 0x4E,  # Slot B (secret, enc write by slot E)
+    0xCD, 0x4E,  # slot C (secret, enc read by slot D, enc write by slot E)
+    0x80, 0x4E,  # Slot D (secret, enc write by slot E)
+    0x90, 0x4F,  # slot E (secret, check only, enc write by slot F)
+    0x90, 0x80,   # slot F (secret, check only, never write)
+    0xFF,  # UseFlag 0
+    0x00,  # UpdateCount 0
+    0xFF,  # UseFlag 1
+    0x00,  # UpdateCount 1
+    0xFF,  # UseFlag 2
+    0x00,  # UpdateCount 2
+    0xFF,  # UseFlag 3
+    0x00,  # UpdateCount 3
+    0xFF,  # UseFlag 4
+    0x00,  # UpdateCount 4
+    0xFF,  # UseFlag 5
+    0x00,  # UpdateCount 5
+    0xFF,  # UseFlag 6
+    0x00,  # UpdateCount 6
+    0xFF,  # UseFlag 7
+    0x00,  # UpdateCount 7
+    0xFF, 0xFF, 0xFF, 0xFF,  # LastKeyUse 0-3
+    0xFF, 0xFF, 0xFF, 0xFF,  # LastKeyUse 4-7
+    0xFF, 0xFF, 0xFF, 0xFF,  # LastKeyUse 8-11
+    0xFF, 0xFF, 0xFF, 0xFF,  # LastKeyUse 12-15
+]
+
+
 class quest_marker:
     """Wrapper for interfacing with a quest marker board"""
 
@@ -105,48 +149,7 @@ class quest_marker:
 
         # configure the ATSHA204A config zone
 
-        config_zone_data = [
-            0xC8,  # I2C Address (default)
-            0x00,  # CheckMacConfig (use rand in nonces for read/write)
-            0xAA,  # OTPmode (locked)
-            0x00,  # SelectorMode
-            0x80, 0x4F,  # Slot 0 (secret, enc write by slot F)
-            0x80, 0x4F,  # Slot 1 (secret, enc write by slot F)
-            0x80, 0x4E,  # Slot 2 (secret, enc write by slot E)
-            0x80, 0x4E,  # Slot 3 (secret, enc write by slot E)
-            0x00, 0x4E,  # Slot 4 (public, enc write by slot E)
-            0x00, 0x4E,  # Slot 5 (public, enc write by slot E)
-            0x00, 0x4E,  # Slot 6 (public, enc write by slot E)
-            0x00, 0x4E,  # Slot 7 (public, enc write by slot E)
-            0xC9, 0x4F,  # slot 8 (secret, enc read by slot 9, enc write by slot F)
-            0x80, 0x4F,  # Slot 9 (secret, enc write by slot F)
-            0xCB, 0x4E,  # slot A (secret, enc read by slot B, enc write by slot E)
-            0x80, 0x4E,  # Slot B (secret, enc write by slot E)
-            0xCD, 0x4E,  # slot C (secret, enc read by slot D, enc write by slot E)
-            0x80, 0x4E,  # Slot D (secret, enc write by slot E)
-            0x90, 0x4F,  # slot E (secret, check only, enc write by slot F)
-            0x90, 0x80,   # slot F (secret, check only, never write)
-            0xFF,  # UseFlag 0
-            0x00,  # UpdateCount 0
-            0xFF,  # UseFlag 1
-            0x00,  # UpdateCount 1
-            0xFF,  # UseFlag 2
-            0x00,  # UpdateCount 2
-            0xFF,  # UseFlag 3
-            0x00,  # UpdateCount 3
-            0xFF,  # UseFlag 4
-            0x00,  # UpdateCount 4
-            0xFF,  # UseFlag 5
-            0x00,  # UpdateCount 5
-            0xFF,  # UseFlag 6
-            0x00,  # UpdateCount 6
-            0xFF,  # UseFlag 7
-            0x00,  # UpdateCount 7
-            0xFF, 0xFF, 0xFF, 0xFF,  # LastKeyUse 0-3
-            0xFF, 0xFF, 0xFF, 0xFF,  # LastKeyUse 4-7
-            0xFF, 0xFF, 0xFF, 0xFF,  # LastKeyUse 8-11
-            0xFF, 0xFF, 0xFF, 0xFF,  # LastKeyUse 12-15
-        ]
+        config_zone_data = ATSHA_CONFIG
 
         for x in range(17):
 
@@ -210,20 +213,53 @@ class quest_marker:
 
         self.crypto.command_lock(True, data_crc)
 
-        # validate data
-
-        for x in range(16):
-            print(x)
-            self.crypto.check_key(x, keys[x])
-
-        print(list(self.crypto.command_read(atsha204a.atasha204A_zone.OTP, 0, 0)) == list(otp_low))
-        print(list(self.crypto.command_read(atsha204a.atasha204A_zone.OTP, 1, 0)) == list(otp_high))
-
     def provision(self, keys, serial):
         """Performs first time setup for the hexpansion"""
 
         self.write_crypto_config()
         self.write_crypto_data(serial, keys)
+
+    def check_config(self, keys):
+        """Validates the configurtion of an app"""
+
+        configCorrect = True
+
+        # check config
+        config = list()
+        config += list(self.crypto.command_read(atsha204a.atasha204A_zone.CONFIG, 0, 0))
+        config += list(self.crypto.command_read(atsha204a.atasha204A_zone.CONFIG, 1, 0))
+        config += list(self.crypto.command_read(atsha204a.atasha204A_zone.CONFIG, 2, 0, four_byte=True))
+        config += list(self.crypto.command_read(atsha204a.atasha204A_zone.CONFIG, 2, 1, four_byte=True))
+        config += list(self.crypto.command_read(atsha204a.atasha204A_zone.CONFIG, 2, 2, four_byte=True))
+        config += list(self.crypto.command_read(atsha204a.atasha204A_zone.CONFIG, 2, 3, four_byte=True))
+        config += list(self.crypto.command_read(atsha204a.atasha204A_zone.CONFIG, 2, 4, four_byte=True))
+        config += list(self.crypto.command_read(atsha204a.atasha204A_zone.CONFIG, 2, 5, four_byte=True))
+
+        if (config[16:84] != ATSHA_CONFIG):
+            print("config mismatch")
+            configCorrect = False
+
+        # validate data
+
+        div_key = self.crypto.generate_diversified_key(
+            keys[0x00],
+            0x00
+        )
+        try:
+            self.crypto.check_key(0, div_key)
+        except Exception:
+            print("Incorrect key in slot 0")
+            configCorrect = False
+
+        for x in range(1, 16):
+            try:
+                self.crypto.check_key(x, keys[x])
+            except Exception:
+                print("Incorrect key in slot {}".format(x))
+                configCorrect = False
+
+        return configCorrect
+
     def perform_challenge(
             self,
             badge_mac: "bytearray|list[int]",
