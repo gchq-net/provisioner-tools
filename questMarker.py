@@ -190,7 +190,15 @@ class quest_marker:
 
         # program data and otp
 
-        for x in range(16):
+        # program diversified key into slot 0
+        div_key = self.crypto.generate_diversified_key(
+            keys[0x00],
+            0x00
+        )
+        utils.auto_retry(self.crypto.command_write, 5, atsha204a.atasha204A_zone.DATA, 0, 0, div_key)
+
+        # program remaining slots
+        for x in range(1, 16):
             utils.auto_retry(self.crypto.command_write, 5, atsha204a.atasha204A_zone.DATA, x, 0, keys[x])
 
         utils.auto_retry(self.crypto.command_write, 5, atsha204a.atasha204A_zone.OTP, 0, 0, otp_low)
@@ -199,12 +207,13 @@ class quest_marker:
         # lock data
 
         crcstream = list()
-        for x in range(16):
+        crcstream += div_key
+        for x in range(1, 16):
             crcstream += list(keys[x])
         crcstream += list(otp_low)
         crcstream += list(otp_high)
 
-        print(len(crcstream))
+        # print(len(crcstream))
 
         data_crc = atsha204a.atsha204A.calculate_crc(crcstream, 0, len(crcstream))
 
