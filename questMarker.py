@@ -2,6 +2,7 @@ import provisioner
 import atsha204a
 import zd24c64a
 import pyftdi
+import utils
 
 
 PIN_STATUS_LED = provisioner.provisioner_pinmap.HEXPANSION_LS1
@@ -149,7 +150,7 @@ class quest_marker:
 
         # configure the ATSHA204A config zone
 
-        config_zone_data = ATSHA_CONFIG
+        config_zone_data = ATSHA_CONFIG.copy()
 
         for x in range(17):
 
@@ -157,20 +158,15 @@ class quest_marker:
             block = addr >> 3
             offset = addr & 0x07
 
-            print(addr, block, offset)
-            self.crypto.command_write(atsha204a.atasha204A_zone.CONFIG, block, offset, config_zone_data[x*4:x*4+4], four_byte=True)
+            # print(addr, block, offset)
+            utils.auto_retry(
+                self.crypto.command_write, 5,
+                atsha204a.atasha204A_zone.CONFIG, block, offset, config_zone_data[x*4:x*4+4], four_byte=True
+                )
 
         # lock the config zone TODO can replace with just reading start and end
 
-        config = list()
-        config += list(self.crypto.command_read(atsha204a.atasha204A_zone.CONFIG, 0, 0))
-        config += list(self.crypto.command_read(atsha204a.atasha204A_zone.CONFIG, 1, 0))
-        config += list(self.crypto.command_read(atsha204a.atasha204A_zone.CONFIG, 2, 0, four_byte=True))
-        config += list(self.crypto.command_read(atsha204a.atasha204A_zone.CONFIG, 2, 1, four_byte=True))
-        config += list(self.crypto.command_read(atsha204a.atasha204A_zone.CONFIG, 2, 2, four_byte=True))
-        config += list(self.crypto.command_read(atsha204a.atasha204A_zone.CONFIG, 2, 3, four_byte=True))
-        config += list(self.crypto.command_read(atsha204a.atasha204A_zone.CONFIG, 2, 4, four_byte=True))
-        config += list(self.crypto.command_read(atsha204a.atasha204A_zone.CONFIG, 2, 5, four_byte=True))
+        config = self.crypto.read_config()
 
         # config_low = self.crypto.command_read(atsha204a.atasha204A_zone.CONFIG, 0, 0)
         # config_end = self.crypto.command_read(atsha204a.atasha204A_zone.CONFIG, 2, 5, four_byte=True)
@@ -179,7 +175,7 @@ class quest_marker:
 
         config_crc = atsha204a.atsha204A.calculate_crc(targetconfig, 0, 88)
 
-        self.crypto.command_lock(False, config_crc)
+        utils.auto_retry(self.crypto.command_lock, 5, False, config_crc)
 
     def write_crypto_data(self, serial, keys):
         """writes the data to the atsha204A"""
@@ -195,9 +191,10 @@ class quest_marker:
         # program data and otp
 
         for x in range(16):
-            self.crypto.command_write(atsha204a.atasha204A_zone.DATA, x, 0, keys[x])
-        self.crypto.command_write(atsha204a.atasha204A_zone.OTP, 0, 0, otp_low)
-        self.crypto.command_write(atsha204a.atasha204A_zone.OTP, 1, 0, otp_high)
+            utils.auto_retry(self.crypto.command_write, 5, atsha204a.atasha204A_zone.DATA, x, 0, keys[x])
+
+        utils.auto_retry(self.crypto.command_write, 5, atsha204a.atasha204A_zone.OTP, 0, 0, otp_low)
+        utils.auto_retry(self.crypto.command_write, 5, atsha204a.atasha204A_zone.OTP, 1, 0, otp_high)
 
         # lock data
 
@@ -211,7 +208,7 @@ class quest_marker:
 
         data_crc = atsha204a.atsha204A.calculate_crc(crcstream, 0, len(crcstream))
 
-        self.crypto.command_lock(True, data_crc)
+        utils.auto_retry(self.crypto.command_lock, 5, True, data_crc)
 
     def provision(self, keys, serial):
         """Performs first time setup for the hexpansion"""
@@ -225,15 +222,7 @@ class quest_marker:
         configCorrect = True
 
         # check config
-        config = list()
-        config += list(self.crypto.command_read(atsha204a.atasha204A_zone.CONFIG, 0, 0))
-        config += list(self.crypto.command_read(atsha204a.atasha204A_zone.CONFIG, 1, 0))
-        config += list(self.crypto.command_read(atsha204a.atasha204A_zone.CONFIG, 2, 0, four_byte=True))
-        config += list(self.crypto.command_read(atsha204a.atasha204A_zone.CONFIG, 2, 1, four_byte=True))
-        config += list(self.crypto.command_read(atsha204a.atasha204A_zone.CONFIG, 2, 2, four_byte=True))
-        config += list(self.crypto.command_read(atsha204a.atasha204A_zone.CONFIG, 2, 3, four_byte=True))
-        config += list(self.crypto.command_read(atsha204a.atasha204A_zone.CONFIG, 2, 4, four_byte=True))
-        config += list(self.crypto.command_read(atsha204a.atasha204A_zone.CONFIG, 2, 5, four_byte=True))
+        config = self.crypto.read_config()
 
         if (config[16:84] != ATSHA_CONFIG):
             print("config mismatch")
@@ -246,14 +235,14 @@ class quest_marker:
             0x00
         )
         try:
-            self.crypto.check_key(0, div_key)
+            utils.auto_retry(self.crypto.check_key, 5, 0, div_key)
         except Exception:
             print("Incorrect key in slot 0")
             configCorrect = False
 
         for x in range(1, 16):
             try:
-                self.crypto.check_key(x, keys[x])
+                utils.auto_retry(self.crypto.check_key, 5, x, keys[x])
             except Exception:
                 print("Incorrect key in slot {}".format(x))
                 configCorrect = False

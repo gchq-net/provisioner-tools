@@ -2,6 +2,7 @@ import enum
 import hashlib
 import pyftdi.i2c
 import time
+import utils
 
 
 class atasha204A_command(enum.Enum):
@@ -68,7 +69,7 @@ class atsha204A:
 
         response = None
         for x in range(10):
-            time.sleep(0.05)
+            time.sleep(0.02)
             try:
                 # todo check incoming CRC
                 # print("reading")
@@ -95,7 +96,7 @@ class atsha204A:
         if (response[0] == 0x04 and response[1] != 0x00):
             raise RuntimeError("Chip returned an error {}".format(hex(response[1])))
 
-        time.sleep(0.2)
+        # time.sleep(0.5)
         return response
 
     def calculate_crc(data: "bytearray|list[int]", offset: int, length: int):
@@ -315,6 +316,21 @@ class atsha204A:
         else:
             return False
 
+    def read_config(self):
+        """Reads the entire configuration zone"""
+
+        config = list()
+        config += list(utils.auto_retry(self.command_read, 5, atasha204A_zone.CONFIG, 0, 0))
+        config += list(utils.auto_retry(self.command_read, 5, atasha204A_zone.CONFIG, 1, 0))
+        config += list(utils.auto_retry(self.command_read, 5, atasha204A_zone.CONFIG, 2, 0, four_byte=True))
+        config += list(utils.auto_retry(self.command_read, 5, atasha204A_zone.CONFIG, 2, 1, four_byte=True))
+        config += list(utils.auto_retry(self.command_read, 5, atasha204A_zone.CONFIG, 2, 2, four_byte=True))
+        config += list(utils.auto_retry(self.command_read, 5, atasha204A_zone.CONFIG, 2, 3, four_byte=True))
+        config += list(utils.auto_retry(self.command_read, 5, atasha204A_zone.CONFIG, 2, 4, four_byte=True))
+        config += list(utils.auto_retry(self.command_read, 5, atasha204A_zone.CONFIG, 2, 5, four_byte=True))
+
+        return (config)
+
     def encrypted_read(
             self,
             readslot: int,
@@ -419,7 +435,7 @@ class atsha204A:
             write_slot, 0,
             xored,
             mac,
-            encrypted=False
+            encrypted=False  # it is actualy encrypted but encryption is ignored after zones are locked
         )
 
     def generate_diversified_key(
