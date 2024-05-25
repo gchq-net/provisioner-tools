@@ -76,7 +76,8 @@ class atsha204A:
                 response = self.i2c_port.read(response_length)
                 break
             except pyftdi.i2c.I2cNackError:
-                print("read error")
+                # print("read error")
+                pass
         if response is None:
             raise Exception("No response from chip")
 

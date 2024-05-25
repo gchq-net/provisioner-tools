@@ -297,6 +297,10 @@ def check_config(ctx):
     device = provisioner.provisioner()
     quest_marker = questMarker.quest_marker(device)
 
+    board_serial, atsha_serial = quest_marker.get_serial_numbers()
+
+    print("checking {} (atsha: {})".format(board_serial, hexString(atsha_serial)))
+
     passed = quest_marker.check_config(ctx.obj['keys'])
 
     if passed:

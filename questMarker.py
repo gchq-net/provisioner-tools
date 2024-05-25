@@ -279,3 +279,12 @@ class quest_marker:
         response = self.crypto.command_mac(slot, [], use_tempkey_end=True)
 
         return (random, response)
+
+    def get_serial_numbers(self):
+        atsha_serial = self.crypto.get_serial_number()
+
+        otp_low = utils.auto_retry(self.crypto.command_read, 5, atsha204a.atasha204A_zone.OTP, 0, 0)
+
+        board_serial = int(str(otp_low[3:7], "ascii"), 16)
+
+        return (board_serial, atsha_serial)
