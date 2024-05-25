@@ -219,20 +219,11 @@ class quest_marker:
         print(list(self.crypto.command_read(atsha204a.atasha204A_zone.OTP, 0, 0)) == list(otp_low))
         print(list(self.crypto.command_read(atsha204a.atasha204A_zone.OTP, 1, 0)) == list(otp_high))
 
-    def provision(self):
+    def provision(self, keys, serial):
         """Performs first time setup for the hexpansion"""
 
-        import json
-
-        with open("secrets.json") as file:
-            raw_keys = json.load(file)
-            keys = dict()
-            for id in raw_keys:
-                keys[bytearray.fromhex(id)[0]] = bytearray.fromhex(raw_keys[id])
-
-        # print(keys)
-
         self.write_crypto_config()
+        self.write_crypto_data(serial, keys)
     def perform_challenge(
             self,
             badge_mac: "bytearray|list[int]",

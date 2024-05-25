@@ -250,6 +250,26 @@ def check_diversified_key(ctx):
     quest_marker.crypto.check_key(0x00, div_key)
 
 
+@cli.command
+@click.argument("id")
+@click.pass_context
+def provision_single_hexpansion(ctx, id: int):
+    """provisions a single hexpansion"""
+
+    device = provisioner.provisioner()
+    quest_marker = questMarker.quest_marker(device)
+
+    serial = int(id, 0)
+
+    print("provisioning as {:04X}".format(serial))
+
+    quest_marker.provision(ctx.obj['keys'], serial)
+
+    print("provisioning complete")
+
+    quest_marker.set_status_led(True)
+
+
 if __name__ == "__main__":
     cli(obj={})
 
