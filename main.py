@@ -3,14 +3,16 @@ import json
 import provisioner
 import questMarker
 import server_validator
+import time
 import utils
 from utils import hexString
 
 
 @click.group()
 @click.option('-s', '--secrets', type=click.Path(exists=True), default="secrets.json")
+@click.option('--api-key')
 @click.pass_context
-def cli(ctx, secrets):
+def cli(ctx, secrets, api_key):
 
     ctx.ensure_object(dict)
 
@@ -21,6 +23,7 @@ def cli(ctx, secrets):
             keys[bytearray.fromhex(id)[0]] = bytearray.fromhex(raw_keys[id])
 
     ctx.obj['keys'] = keys
+    ctx.obj['api_key'] = api_key
 
 
 @cli.command()
@@ -201,6 +204,8 @@ def provision_single_hexpansion(ctx, id: int):
     device = provisioner.provisioner()
     quest_marker = questMarker.quest_marker(device)
 
+    device.set_status_led(False)
+
     serial = int(id, 0)
 
     print("provisioning as {:04X}".format(serial))
@@ -209,7 +214,54 @@ def provision_single_hexpansion(ctx, id: int):
 
     print("provisioning complete")
 
-    quest_marker.set_status_led(True)
+    atsha_serial = utils.auto_retry(quest_marker.crypto.get_serial_number, 5)
+
+    device.set_status_led(True)
+    utils.register_provision(serial, atsha_serial, ctx.obj['api_key'])
+
+
+@cli.command
+@click.argument("starting-id")
+@click.pass_context
+def provision_multiple_hexpansions(ctx, starting_id: str):
+    """provisions a set of hexpansions"""
+
+    device = provisioner.provisioner()
+    quest_marker = questMarker.quest_marker(device)
+
+    serial = int(starting_id, 0)
+
+    while True:
+
+        print("provisioning next as {:04X}".format(serial))
+
+        device.wait_for_detect()
+        time.sleep(0.5)
+
+        try:
+            quest_marker.provision(ctx.obj['keys'], serial)
+
+            print("provisioning complete ({:04X})".format(serial))
+
+            atsha_serial = utils.auto_retry(quest_marker.crypto.get_serial_number, 5)
+
+            utils.register_provision(serial, atsha_serial, ctx.obj['api_key'])
+
+            checks = quest_marker.check_config(ctx.obj['keys'])
+
+            if checks:
+                print("checks passed")
+            else:
+                print("Config checks failed ({:04X})".format(serial))
+
+            device.set_status_led(True)
+        except Exception as e:
+            print("FAILED TO PROVISION ({:04X})".format(serial))
+            print(e)
+
+        device.wait_for_no_detect()
+        device.set_status_led(False)
+        serial += 1
 
 
 @cli.command
@@ -264,6 +316,18 @@ def update_config(ctx):
     print("updating {:04X} (atsha: {})".format(board_serial, hexString(atsha_serial)))
 
     quest_marker.update(ctx.obj['keys'])
+
+
+@cli.command
+@click.argument("board_sn")
+@click.argument("atsha_sn")
+@click.pass_context
+def register_provision(ctx, board_sn, atsha_sn):
+
+    board_serial = int(board_sn, 0)
+    atsha_serial = bytearray.fromhex(atsha_sn)
+
+    utils.register_provision(board_serial, atsha_serial, ctx.obj['api_key'])
 
 
 if __name__ == "__main__":

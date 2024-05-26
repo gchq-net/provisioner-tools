@@ -243,6 +243,7 @@ class quest_marker:
 
         self.write_crypto_config()
         self.write_crypto_data(serial, keys)
+        self.write_eeprom(serial)
 
     def update(self, keys):
 
