@@ -1,3 +1,4 @@
+import eeprom
 import provisioner
 import atsha204a
 import zd24c64a
@@ -219,11 +220,35 @@ class quest_marker:
 
         utils.auto_retry(self.crypto.command_lock, 5, True, data_crc)
 
+    def write_eeprom(self, serial):
+        """Writes the eeprom contnents"""
+
+        # disable write protect
+        self.set_eeprom_wp(False)
+
+        # write header
+        header_data = eeprom.generate_header_data(serial)
+        self.eeprom.writeAddr(0, header_data)
+
+        # write filesystem
+        filesystem = eeprom.get_littlefs_image()
+
+        for x in range(0, len(filesystem), 32):
+            self.eeprom.writeAddr(32+x, filesystem[x:x+32])
+
+        self.set_eeprom_wp(True)
+
     def provision(self, keys, serial):
         """Performs first time setup for the hexpansion"""
 
         self.write_crypto_config()
         self.write_crypto_data(serial, keys)
+
+    def update(self, keys):
+
+        board_serial, atsha_serial = self.get_serial_numbers()
+
+        self.write_eeprom(board_serial)
 
     def check_config(self, keys):
         """Validates the configurtion of an app"""
@@ -255,6 +280,25 @@ class quest_marker:
             except Exception:
                 print("Incorrect key in slot {}".format(x))
                 configCorrect = False
+
+        # check EEPROM header
+
+        board_serial, atsha_serial = self.get_serial_numbers()
+
+        eeprom_data = self.eeprom.readAddr(0, 32)
+        expected_eeprom_header = eeprom.generate_header_data(board_serial)
+
+        if list(eeprom_data) != list(expected_eeprom_header):
+            print("EEPROM header mismatch")
+            configCorrect = False
+
+        # check EEPROM filesystem
+
+        fs_data = self.eeprom.readAddr(32, (1024*8) - 32)
+
+        if not eeprom.check_littlefs_dump_against_file(fs_data):
+            print("EEPROM litltefs mismatch")
+            configCorrect = False
 
         return configCorrect
 

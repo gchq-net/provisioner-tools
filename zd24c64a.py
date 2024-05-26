@@ -15,4 +15,4 @@ class zd24c64a:
     def readAddr(self, address: int, length: int):
         output = [(address >> 8) & 0xFF, address & 0xFF]
         self.i2c_port.write(output)
-        return self.i2c_port.read(20)
+        return self.i2c_port.read(length)

@@ -214,7 +214,7 @@ def provision_single_hexpansion(ctx, id: int):
 
 @cli.command
 @click.pass_context
-def set_diversified_key(ctx, id: int):
+def set_diversified_key(ctx):
     """diversifies the slot 0 key"""
 
     device = provisioner.provisioner()
@@ -243,7 +243,7 @@ def check_config(ctx):
 
     board_serial, atsha_serial = quest_marker.get_serial_numbers()
 
-    print("checking {} (atsha: {})".format(board_serial, hexString(atsha_serial)))
+    print("checking {:04X} (atsha: {})".format(board_serial, hexString(atsha_serial)))
 
     passed = quest_marker.check_config(ctx.obj['keys'])
 
@@ -251,6 +251,19 @@ def check_config(ctx):
         print("Config is correct")
     else:
         print("configuration mismatch")
+
+
+@cli.command
+@click.pass_context
+def update_config(ctx):
+    device = provisioner.provisioner()
+    quest_marker = questMarker.quest_marker(device)
+
+    board_serial, atsha_serial = quest_marker.get_serial_numbers()
+
+    print("updating {:04X} (atsha: {})".format(board_serial, hexString(atsha_serial)))
+
+    quest_marker.update(ctx.obj['keys'])
 
 
 if __name__ == "__main__":
