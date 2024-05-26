@@ -330,6 +330,27 @@ def register_provision(ctx, board_sn, atsha_sn):
     utils.register_provision(board_serial, atsha_serial, ctx.obj['api_key'])
 
 
+@cli.command
+@click.argument("badge_mac")
+@click.pass_context
+def submit_capture(ctx, badge_mac):
+    """
+    Performs a test challenge against the chip
+    and submits to the server
+    """
+    device = provisioner.provisioner()
+    quest_marker = questMarker.quest_marker(device)
+
+    badge_mac = bytes.fromhex(badge_mac.replace("-", ""))
+
+    chip_serial = quest_marker.crypto.get_serial_number()
+    (chip_random, chip_response) = quest_marker.perform_challenge(badge_mac)
+
+    print("chip: {}".format(hexString(chip_response)))
+
+    utils.submit_capture(badge_mac, chip_serial, chip_random, chip_response, "staging.gchq.net")
+
+
 if __name__ == "__main__":
     cli(obj={})
 
